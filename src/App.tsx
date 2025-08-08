@@ -17,7 +17,7 @@ interface Pill {
   color: string
   isDragging?: boolean
   zIndex: number
-  isSplitPart?: boolean
+  splitLevel?: number
 }
 
 export default function PillSplitter() {
@@ -27,6 +27,12 @@ export default function PillSplitter() {
   const [startPos, setStartPos] = useState<Point>({ x: 0, y: 0 })
   const [pills, setPills] = useState<Pill[]>([])
   const [nextZIndex, setNextZIndex] = useState(1)
+
+  const [draggedPill, setDraggedPill] = useState<Pill | null>(null)
+  const [dragOffset, setDragOffset] = useState<Point>({ x: 0, y: 0 })
+  const [showSplitLines, setShowSplitLines] = useState(true)
+  const [hasDragged, setHasDragged] = useState(false)
+
 
   const getContainerCoordinates = useCallback((e: MouseEvent): Point => {
     const container = containerRef.current
@@ -46,6 +52,177 @@ export default function PillSplitter() {
     ]
     return colors[Math.floor(Math.random() * colors.length)]
   }, [])
+
+  const findPillAtPoint = useCallback((point: Point): Pill | null => {
+    const pillsAtPoint = pills.filter(pill => 
+      point.x >= pill.x && point.x <= pill.x + pill.width && point.y >= pill.y && point.y <= pill.y + pill.height
+    )
+
+    return pillsAtPoint.reduce ((topPill, pill) => 
+      !topPill || pill.zIndex > topPill.zIndex ? pill : topPill, null as Pill | null)
+  }, [pills])
+    const splitPillsAtLines = useCallback((clickX: number, clickY: number) => {
+    const newPills: Pill[] = []
+
+    pills.forEach(pill => {
+      const pillLeft = pill.x
+      const pillRight = pill.x + pill.width
+      const pillTop = pill.y
+      const pillBottom = pill.y + pill.height
+
+      // Check if split lines intersect this pill
+      const verticalIntersects = clickX > pillLeft && clickX < pillRight && 
+                                clickY >= pillTop && clickY <= pillBottom
+      const horizontalIntersects = clickY > pillTop && clickY < pillBottom && 
+                                  clickX >= pillLeft && clickX <= pillRight
+
+      if (verticalIntersects && horizontalIntersects) {
+        // Both lines intersect - split into 4 parts
+        const leftWidth = clickX - pill.x
+        const rightWidth = pill.width - leftWidth
+        const topHeight = clickY - pill.y
+        const bottomHeight = pill.height - topHeight
+
+        const currentSplitLevel = (pill.splitLevel || 0) + 1
+
+        // Top-left part
+        if (leftWidth >= 20 && topHeight >= 20) {
+          newPills.push({
+            ...pill,
+            id: `${pill.id}-tl-${Date.now()}`,
+            width: leftWidth,
+            height: topHeight,
+            zIndex: nextZIndex + newPills.length,
+            splitLevel: currentSplitLevel
+          })
+        }
+
+        // Top-right part
+        if (rightWidth >= 20 && topHeight >= 20) {
+          newPills.push({
+            ...pill,
+            id: `${pill.id}-tr-${Date.now()}`,
+            x: clickX,
+            width: rightWidth,
+            height: topHeight,
+            zIndex: nextZIndex + newPills.length,
+            splitLevel: currentSplitLevel
+          })
+        }
+
+        // Bottom-left part
+        if (leftWidth >= 20 && bottomHeight >= 20) {
+          newPills.push({
+            ...pill,
+            id: `${pill.id}-bl-${Date.now()}`,
+            y: clickY,
+            width: leftWidth,
+            height: bottomHeight,
+            zIndex: nextZIndex + newPills.length,
+            splitLevel: currentSplitLevel
+          })
+        }
+
+        // Bottom-right part
+        if (rightWidth >= 20 && bottomHeight >= 20) {
+          newPills.push({
+            ...pill,
+            id: `${pill.id}-br-${Date.now()}`,
+            x: clickX,
+            y: clickY,
+            width: rightWidth,
+            height: bottomHeight,
+            zIndex: nextZIndex + newPills.length,
+            splitLevel: currentSplitLevel
+          })
+        }
+
+        // If no parts could be created (pill too small), just move the original
+        if (newPills.filter(p => p.id.startsWith(pill.id)).length === 0) {
+          newPills.push({
+            ...pill,
+            id: `${pill.id}-moved-${Date.now()}`,
+            x: pill.x + (Math.random() - 0.5) * 20,
+            y: pill.y + (Math.random() - 0.5) * 20,
+            zIndex: nextZIndex + newPills.length,
+            splitLevel: currentSplitLevel
+          })
+        }
+      } else if (verticalIntersects) {
+        // Only vertical line intersects - split into 2 parts (left/right)
+        const leftWidth = clickX - pill.x
+        const rightWidth = pill.width - leftWidth
+        const currentSplitLevel = (pill.splitLevel || 0) + 1
+
+        if (leftWidth >= 20 && rightWidth >= 20) {
+          // Both parts are big enough
+          newPills.push({
+            ...pill,
+            id: `${pill.id}-l-${Date.now()}`,
+            width: leftWidth,
+            zIndex: nextZIndex + newPills.length,
+            splitLevel: currentSplitLevel
+          })
+          newPills.push({
+            ...pill,
+            id: `${pill.id}-r-${Date.now()}`,
+            x: clickX,
+            width: rightWidth,
+            zIndex: nextZIndex + newPills.length,
+            splitLevel: currentSplitLevel
+          })
+        } else {
+          // Too small to split, move to one side
+          const moveLeft = leftWidth < rightWidth
+          newPills.push({
+            ...pill,
+            id: `${pill.id}-moved-${Date.now()}`,
+            x: moveLeft ? pill.x - 10 : pill.x + 10,
+            zIndex: nextZIndex + newPills.length,
+            splitLevel: currentSplitLevel
+          })
+        }
+      } else if (horizontalIntersects) {
+        const topHeight = clickY - pill.y
+        const bottomHeight = pill.height - topHeight
+        const currentSplitLevel = (pill.splitLevel || 0) + 1
+
+        if (topHeight >= 20 && bottomHeight >= 20) {
+          // Both parts are big enough
+          newPills.push({
+            ...pill,
+            id: `${pill.id}-t-${Date.now()}`,
+            height: topHeight,
+            zIndex: nextZIndex + newPills.length,
+            splitLevel: currentSplitLevel
+          })
+          newPills.push({
+            ...pill,
+            id: `${pill.id}-b-${Date.now()}`,
+            y: clickY,
+            height: bottomHeight,
+            zIndex: nextZIndex + newPills.length,
+            splitLevel: currentSplitLevel
+          })
+        } else {
+          // Too small to split, move to one side
+          const moveUp = topHeight < bottomHeight
+          newPills.push({
+            ...pill,
+            id: `${pill.id}-moved-${Date.now()}`,
+            y: moveUp ? pill.y - 10 : pill.y + 10,
+            zIndex: nextZIndex + newPills.length,
+            splitLevel: currentSplitLevel
+          })
+        }
+      } else {
+        newPills.push(pill)
+      }
+    })
+
+    setPills(newPills)
+    setNextZIndex(prev => prev + 20) 
+  }, [pills, nextZIndex])
 
   useEffect(() => {
     const container = containerRef.current
@@ -78,7 +255,7 @@ export default function PillSplitter() {
             height,
             color: getRandomColor(),
             zIndex: nextZIndex,
-            isSplitPart: false
+            // isSplitPart: false
           }
           setPills(prev => [...prev, newPill])
           setNextZIndex(prev => prev + 1)
@@ -107,6 +284,30 @@ export default function PillSplitter() {
         className="flex-1 relative overflow-hidden cursor-crosshair"
         style={{ userSelect: 'none' }}
       >
+         {showSplitLines && (
+          <>
+            <div 
+              className="absolute bg-gray-400 pointer-events-none z-50"
+              style={{
+                left: mousePos.x - 0.5,
+                top: 0,
+                width: 1,
+                height: '100%',
+                opacity: 0.7
+              }}
+            />
+            <div 
+              className="absolute bg-gray-400 pointer-events-none z-50"
+              style={{
+                left: 0,
+                top: mousePos.y - 0.5,
+                width: '100%',
+                height: 1,
+                opacity: 0.7
+              }}
+            />
+          </>
+        )}
         {/* Pills */}
         {pills.map(pill => (
           <div
@@ -138,12 +339,6 @@ export default function PillSplitter() {
             }}
           />
         )}
-      </div>
-
-      <div className="bg-gray-100 p-2 text-xs text-gray-500 border-t">
-        Mouse: ({mousePos.x.toFixed(0)}, {mousePos.y.toFixed(0)}) | 
-        Pills: {pills.length} |
-        {isDrawing && ' Drawing new pill...'}
       </div>
     </div>
   )
