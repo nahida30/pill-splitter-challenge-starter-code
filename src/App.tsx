@@ -231,12 +231,45 @@ export default function PillSplitter() {
     const handleMouseMove = (e: MouseEvent) => {
       const pos = getContainerCoordinates(e)
       setMousePos(pos)
+
+      if (draggedPill) {
+        setHasDragged(true)
+        const newX = Math.max(0, pos.x - dragOffset.x)
+        const newY = Math.max(0, pos.y - dragOffset.y)
+
+        setPills(prev => prev.map(pill => 
+          pill.id === draggedPill.id
+          ? { ...pill, x: newX, y: newY}
+          : pill
+        ))
+      }
     }
 
     const handleMouseDown = (e: MouseEvent) => {
       const pos = getContainerCoordinates(e)
-      setIsDrawing(true)
-      setStartPos(pos)
+      const clickedPill = findPillAtPoint(pos)
+
+      setHasDragged(false)
+
+      if (clickedPill) {
+        setDraggedPill(clickedPill)
+        setDragOffset({
+          x: pos.x - clickedPill.x,
+          y: pos.y - clickedPill.y
+        })
+
+        setPills(prev => prev.map(pill => 
+          pill.id === clickedPill.id
+          ? {...pill, zIndex: nextZIndex}
+          : pill
+        ))
+        setNextZIndex(prev => prev+1)
+
+      }
+      else {
+        setIsDrawing(true)
+        setStartPos(pos)
+      }
     }
 
     const handleMouseUp = (e: MouseEvent) => {
@@ -256,24 +289,35 @@ export default function PillSplitter() {
             color: getRandomColor(),
             zIndex: nextZIndex,
             // isSplitPart: false
+            splitLevel: 0
           }
           setPills(prev => [...prev, newPill])
           setNextZIndex(prev => prev + 1)
         }
         setIsDrawing(false)
       }
+      setDraggedPill(null)
+    }
+
+    const handleClick = (e: MouseEvent) => {
+      if (!hasDragged && !isDrawing && !draggedPill) {
+        const pos = getContainerCoordinates(e)
+        splitPillsAtLines(pos.x, pos.y)
+      }
     }
 
     container.addEventListener('mousemove', handleMouseMove)
     container.addEventListener('mousedown', handleMouseDown)
     container.addEventListener('mouseup', handleMouseUp)
+    container.addEventListener('click', handleClick)
 
     return () => {
       container.removeEventListener('mousemove', handleMouseMove)
       container.removeEventListener('mousedown', handleMouseDown)
       container.removeEventListener('mouseup', handleMouseUp)
+      container.removeEventListener('click', handleClick)
     }
-  }, [getContainerCoordinates, isDrawing, startPos, nextZIndex, getRandomColor])
+  }, [getContainerCoordinates, isDrawing, startPos, nextZIndex, getRandomColor, findPillAtPoint, pills, splitPillsAtLines, draggedPill, dragOffset, hasDragged])
 
   return (
     <div className="w-full h-screen bg-gray-50 flex flex-col">
